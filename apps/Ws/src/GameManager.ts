@@ -373,17 +373,10 @@ export class GameManager {
               opponent,
               user,
               questions,
-              (
-                gameId,
-                shouldUpdateScores
-              ) => {
-                if (
-                  shouldUpdateScores
-                ) {
-                  this.updateScoresAfterGame(
-                    game
-                  );
-                }
+              (gameId) => {
+                this.updateScoresAfterGame(
+                  game
+                );
 
                 this.removeGame(
                   gameId
@@ -457,17 +450,10 @@ export class GameManager {
               user,
               bot,
               questions,
-              (
-                gameId,
-                shouldUpdateScores
-              ) => {
-                if (
-                  shouldUpdateScores
-                ) {
-                  this.updateScoresAfterGame(
-                    game
-                  );
-                }
+              (gameId) => {
+                this.updateScoresAfterGame(
+                  game
+                );
 
                 this.removeGame(
                   gameId
