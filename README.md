@@ -1,159 +1,659 @@
-# Turborepo starter
+# 🧠 NEETROYAL
 
-This Turborepo starter is maintained by the Turborepo core team.
+### Real-Time Multiplayer NEET Battle Arena with AI-Powered Performance Analysis
 
-## Using this example
+> **NEETROYAL** is a real-time multiplayer competitive learning platform designed around NEET preparation. Players can challenge each other in live 1v1 MCQ battles, compete through timed questions, and receive personalized post-match performance analysis powered by an AI/RAG pipeline.
 
-Run the following command:
+---
 
-```sh
-npx create-turbo@latest
+## 🚀 Overview
+
+NEET preparation can become repetitive when learning is limited to conventional question banks and individual practice.
+
+**NEETROYAL** turns MCQ practice into a competitive experience.
+
+Two players enter a real-time **1v1 battle**, receive the same NEET-style questions, answer under time pressure, and compete based on their performance.
+
+After the match, NEETROYAL can analyze the player's performance and provide:
+
+* 📊 Overall performance feedback
+* 🎯 Weak topics
+* 💪 Strong topics
+* 📚 Subject-wise performance
+* 🔥 Priority topic for revision
+* 📝 Personalized recommendations
+
+The project combines a modern web application, real-time WebSocket communication, a question service, and a separate AI/RAG microservice.
+
+---
+
+# ✨ Core Features
+
+## ⚔️ Real-Time 1v1 Battle
+
+Players can compete against another player in a live MCQ match.
+
+* Real-time matchmaking
+* WebSocket-based communication
+* Synchronized questions
+* Timed answering
+* Server-side scoring
+* Live opponent state
+* Match completion handling
+
+---
+
+## 🧠 NEET Question System
+
+NEET-style MCQs are served through the backend question system.
+
+Questions contain:
+
+* Question text
+* Multiple-choice options
+* Correct answer
+* Subject/topic information
+
+The correct answer is kept on the server side for trusted scoring.
+
+---
+
+## 🔐 Authentication
+
+NEETROYAL includes authentication and user-related backend functionality.
+
+The application separates:
+
+* Frontend authentication flow
+* HTTP API
+* WebSocket authentication
+* User-specific match state
+
+---
+
+## 🤖 AI-Powered Performance Analysis
+
+After a match, the performance service records the player's answers and generates a structured performance report.
+
+The analysis can identify:
+
+* Overall performance
+* Correct vs incorrect answers
+* Score percentage
+* Strong topics
+* Weak topics
+* Subject breakdown
+* Priority revision topic
+* Recommended areas for revision
+
+The frontend presents this information in a dedicated post-match analysis interface.
+
+---
+
+# 🧬 AI + RAG Pipeline
+
+The AI system is implemented as a separate FastAPI microservice.
+
+```text
+                 NEET Questions
+                       │
+                       ▼
+              Question Registry
+                       │
+                       ▼
+                FAISS Embeddings
+                       │
+                       ▼
+              Semantic Retrieval
+                       │
+                       ▼
+              Performance Context
+                       │
+                       ▼
+                 AI Analysis
+                       │
+                       ▼
+            Personalized Report
 ```
 
-## What's inside?
+The AI service is responsible for the performance-analysis pipeline while the Node.js services remain responsible for the real-time game experience.
 
-This Turborepo includes the following packages/apps:
+### AI service components
 
-### Apps and Packages
-
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
-
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
-
-### Utilities
-
-This Turborepo has some additional tools already setup for you:
-
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
-
-### Build
-
-To build all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo build
+```text
+neet-royale-ai-stage1/
+│
+├── app/
+│   ├── api/
+│   │   ├── ai_analysis.py
+│   │   ├── answers.py
+│   │   ├── match.py
+│   │   └── performance.py
+│   │
+│   ├── db/
+│   │   ├── performance_db.py
+│   │   ├── question_registry.py
+│   │   ├── page_registry.py
+│   │   └── source_registry.py
+│   │
+│   ├── extraction/
+│   ├── ingestion/
+│   ├── models/
+│   └── rag/
+│       ├── embedder.py
+│       └── generator.py
+│
+├── data/
+├── requirements.txt
+└── README.md
 ```
 
-Without global `turbo`, use your package manager:
+---
 
-```sh
-cd my-turborepo
-npx turbo build
-pnpm dlx turbo build
-pnpm exec turbo build
+# 🏗️ System Architecture
+
+```text
+                        ┌─────────────────────┐
+                        │   React + Vite      │
+                        │     Frontend        │
+                        └──────────┬──────────┘
+                                   │
+                         HTTP / WebSocket
+                                   │
+                    ┌──────────────┴──────────────┐
+                    │                             │
+                    ▼                             ▼
+          ┌─────────────────┐           ┌─────────────────┐
+          │   HTTP Server   │           │ WebSocket Server│
+          │    Node.js      │           │    Node.js      │
+          └────────┬────────┘           └────────┬────────┘
+                   │                             │
+                   │                             │
+                   │                    ┌────────▼────────┐
+                   │                    │   GameManager   │
+                   │                    │      + Game     │
+                   │                    └────────┬────────┘
+                   │                             │
+                   └──────────────┬──────────────┘
+                                  │
+                                  ▼
+                       ┌─────────────────────┐
+                       │   FastAPI AI       │
+                       │     Service        │
+                       └──────────┬──────────┘
+                                  │
+                    ┌─────────────┴─────────────┐
+                    │                           │
+                    ▼                           ▼
+             ┌──────────────┐           ┌──────────────┐
+             │ Question DB  │           │ FAISS Index  │
+             │  Registry    │           │  Embeddings  │
+             └──────────────┘           └──────────────┘
+                                  │
+                                  ▼
+                         ┌────────────────┐
+                         │  Groq / LLM    │
+                         └────────────────┘
 ```
 
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+---
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+# 🛠️ Tech Stack
 
-```sh
-turbo build --filter=docs
+## Frontend
+
+* React
+* Vite
+* Tailwind CSS
+* JavaScript / JSX
+* Lucide React
+
+## Backend
+
+* Node.js
+* TypeScript
+* WebSockets
+* HTTP API
+* Prisma
+
+## AI Service
+
+* Python
+* FastAPI
+* Sentence Transformers
+* FAISS
+* Groq
+* Pydantic
+
+## Database / Storage
+
+* PostgreSQL / Prisma-based application data
+* SQLite-based AI service registries
+* FAISS vector index
+
+## Package Management
+
+* pnpm
+* Turborepo
+
+---
+
+# 📁 Project Structure
+
+```text
+NEETROYAL V1.0/
+│
+├── apps/
+│   │
+│   ├── neetroyal/
+│   │   └── React + Vite frontend
+│   │
+│   ├── Ws/
+│   │   └── WebSocket multiplayer server
+│   │
+│   └── http/
+│       └── HTTP API server
+│
+├── packages/
+│   │
+│   ├── db/
+│   │   ├── Prisma schema
+│   │   └── database layer
+│   │
+│   ├── ui/
+│   │   └── shared UI components
+│   │
+│   └── eslint-config/
+│       └── shared lint configuration
+│
+├── neet-royale-ai-stage1/
+│   │
+│   ├── app/
+│   │   ├── api/
+│   │   ├── db/
+│   │   ├── extraction/
+│   │   ├── ingestion/
+│   │   ├── models/
+│   │   └── rag/
+│   │
+│   ├── data/
+│   ├── requirements.txt
+│   └── README.md
+│
+├── package.json
+├── pnpm-workspace.yaml
+├── pnpm-lock.yaml
+└── turbo.json
 ```
 
-Without global `turbo`:
+---
 
-```sh
-npx turbo build --filter=docs
-pnpm exec turbo build --filter=docs
-pnpm exec turbo build --filter=docs
+# 🔄 Match Flow
+
+A typical 1v1 match follows this flow:
+
+```text
+Player 1
+   │
+   ├──────────────┐
+   │              │
+   ▼              ▼
+Matchmaking ← Player 2
+       │
+       ▼
+  Game Created
+       │
+       ▼
+Questions Loaded
+       │
+       ▼
+  Live 1v1 Battle
+       │
+       ├── Player answers
+       ├── Server validates
+       ├── Score updated
+       └── Performance recorded
+       │
+       ▼
+   Match Ends
+       │
+       ▼
+Performance Session Ends
+       │
+       ▼
+Performance Summary
+       │
+       ▼
+AI / RAG Analysis
+       │
+       ▼
+Post-Match Report
 ```
 
-### Develop
+---
 
-To develop all apps and packages, run the following command:
+# 📊 Performance Analysis
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
+The performance service maintains a session for each player during a match.
 
-```sh
-cd my-turborepo
-turbo dev
+For each answer, the system records information such as:
+
+```text
+Session
+├── user
+├── match
+├── question
+├── chosen answer
+├── subject
+└── correctness
 ```
 
-Without global `turbo`, use your package manager:
+After the match, the collected information is transformed into a performance summary.
 
-```sh
-cd my-turborepo
-npx turbo dev
-pnpm exec turbo dev
-pnpm exec turbo dev
+Example structure:
+
+```json
+{
+  "total_questions": 5,
+  "correct": 3,
+  "incorrect": 2,
+  "score_percent": 60,
+  "ai_analysis": {
+    "overall_feedback": "...",
+    "strong_topics": [],
+    "weak_topics": [],
+    "subject_breakdown": {},
+    "recommendations": [],
+    "priority_topic": "..."
+  }
+}
 ```
 
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+---
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+# 🔌 Service Endpoints
 
-```sh
-turbo dev --filter=web
+The AI service exposes endpoints for:
+
+```text
+POST /answers/submit
+GET  /performance/summary/{session_id}
+POST /performance/end/{session_id}
 ```
 
-Without global `turbo`:
+The Node.js question integration communicates with the AI service through the configured AI service URL.
 
-```sh
-npx turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-pnpm exec turbo dev --filter=web
+---
+
+# 💻 Local Development
+
+## Prerequisites
+
+Make sure you have:
+
+* Node.js
+* pnpm
+* Python 3.13+
+* Git
+
+---
+
+## 1. Clone the repository
+
+```bash
+git clone https://github.com/NityaParmar/NEETROYAL-SIH.git
+cd NEETROYAL-SIH
 ```
 
-### Remote Caching
+---
 
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
+## 2. Install Node dependencies
 
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo login
+```bash
+pnpm install
 ```
 
-Without global `turbo`, use your package manager:
+---
 
-```sh
-cd my-turborepo
-npx turbo login
-pnpm exec turbo login
-pnpm exec turbo login
+## 3. Configure environment variables
+
+Create the required `.env` files based on the provided `.env.example` files.
+
+Never commit real secrets.
+
+Typical environment configuration includes:
+
+```text
+DATABASE_URL=...
+JWT_SECRET=...
+AI_SERVICE_URL=...
+GROQ_API_KEY=...
 ```
 
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
+The exact variables depend on the service being configured.
 
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
+---
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+# 🐍 AI Service Setup
 
-```sh
-turbo link
+Move into the AI service:
+
+```bash
+cd neet-royale-ai-stage1
 ```
 
-Without global `turbo`:
+Create a virtual environment:
 
-```sh
-npx turbo link
-pnpm exec turbo link
-pnpm exec turbo link
+### Windows
+
+```powershell
+python -m venv venv
+venv\Scripts\activate
 ```
 
-## Useful Links
+Install dependencies:
 
-Learn more about the power of Turborepo:
+```bash
+pip install -r requirements.txt
+```
 
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+Configure the AI service environment variables.
+
+Then start FastAPI:
+
+```bash
+uvicorn app.main:app --reload --port 8000
+```
+
+The AI service will be available locally at:
+
+```text
+http://127.0.0.1:8000
+```
+
+---
+
+# ▶️ Run the Node.js Application
+
+From the project root:
+
+```bash
+pnpm dev
+```
+
+The monorepo development environment starts the Node/frontend services according to the workspace configuration.
+
+The frontend development server is served by Vite.
+
+---
+
+# 🔗 Local Service Architecture
+
+During development, the services communicate approximately as follows:
+
+```text
+Frontend
+   │
+   ├── HTTP ───────────────► HTTP API
+   │
+   └── WebSocket ──────────► WS Server
+                                  │
+                                  ▼
+                             AI Service
+                                  │
+                                  ▼
+                              FAISS / DB
+                                  │
+                                  ▼
+                                Groq
+```
+
+---
+
+# 🔐 Security Notes
+
+NEETROYAL uses separate environment configuration for secrets and local development data.
+
+The repository intentionally excludes sensitive or generated files such as:
+
+```text
+.env
+venv/
+.venv/
+node_modules/
+*.db
+FAISS indexes
+generated PDF data
+```
+
+**Never commit:**
+
+* API keys
+* database passwords
+* JWT secrets
+* private credentials
+* production environment files
+
+Use environment variables in deployment environments.
+
+---
+
+# 📦 AI Data
+
+The AI service uses generated/local data including:
+
+```text
+data/
+├── registry.db
+├── performance.db
+├── faiss_index/
+└── raw_pdfs/
+```
+
+These generated/runtime artifacts are intentionally excluded from Git.
+
+For production deployment, the required question registry and vector index must be provisioned separately on the AI service.
+
+---
+
+# 🧪 Development Philosophy
+
+NEETROYAL is structured as a modular system rather than a single application.
+
+```text
+Frontend
+   ↓
+HTTP / WebSocket
+   ↓
+Node.js services
+   ↓
+AI microservice
+   ↓
+RAG + LLM
+```
+
+This separation allows the real-time game system and AI system to evolve independently.
+
+---
+
+# 🎯 Project Goals
+
+NEETROYAL aims to explore how competitive multiplayer mechanics can be combined with AI-assisted learning.
+
+The core idea is simple:
+
+> **Don't just tell students whether they were right or wrong. Help them understand what they should work on next.**
+
+---
+
+# 🚧 Current Development Status
+
+### Implemented
+
+* [x] React/Vite frontend
+* [x] Authentication flow
+* [x] HTTP backend
+* [x] WebSocket server
+* [x] Real-time 1v1 MCQ battle
+* [x] Server-side scoring
+* [x] NEET question integration
+* [x] AI question service integration
+* [x] Performance tracking
+* [x] FastAPI AI service
+* [x] RAG infrastructure
+* [x] FAISS-based retrieval
+* [x] AI performance analysis
+* [x] Post-match performance UI
+
+### In Progress
+
+* [ ] Production deployment
+* [ ] Production service configuration
+* [ ] Production AI data provisioning
+* [ ] Final SIH demonstration environment
+
+---
+
+# 🏆 Smart India Hackathon
+
+**NEETROYAL-SIH** is the deployment repository for the NEETROYAL project prepared for demonstration and evaluation in the **Smart India Hackathon (SIH)** context.
+
+The project combines:
+
+```text
+Competitive Learning
+        +
+Real-Time Multiplayer
+        +
+NEET MCQs
+        +
+AI
+        +
+RAG
+```
+
+into one learning experience.
+
+---
+
+# 👨‍💻 Development
+
+Built as a full-stack engineering project using a monorepo architecture.
+
+### Repository
+
+**NEETROYAL-SIH**
+
+### Author
+
+**Project Hail Mary**
+
+---
+
+## ⭐ If you find the project interesting
+
+Give the repository a star and follow the project as NEETROYAL continues to evolve.
+
+---
+
+> **NEETROYAL — Learn. Compete. Analyze. Improve.**
