@@ -28,9 +28,8 @@ interface AIQuestionResponse {
   source_type?: string;
 }
 
-// Explicit string type definition solves TS2322
-const AI_SERVICE_URL: string =
-  process.env.AI_SERVICE_URL || "https://neetroyal-ai.onrender.com";
+// Fixed double semicolon typo and explicitly typed string for TS2322 compliance
+const AI_SERVICE_URL: string = process.env.AI_SERVICE_URL || "http://localhost:8000";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -86,7 +85,7 @@ function normalizeCorrectAnswer(answer: unknown): string {
   if (typeof answer === "number") {
     const letters = ["A", "B", "C", "D"];
     if (answer >= 0 && answer < letters.length) {
-      return letters[answer];
+      return letters[answer]!;
     }
   }
 
