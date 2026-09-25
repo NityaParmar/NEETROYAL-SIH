@@ -4,287 +4,963 @@ import { fileURLToPath } from "url";
 import { WebSocket } from "ws";
 import { prisma } from "@repo/db";
 import { User } from "./User.js";
-import { Game, QuestionItem } from "./Game.js";
+import {
+  Game,
+  QuestionItem,
+} from "./Game.js";
+import {
+  fetchQuestionsFromAI,
+} from "./ai-questions.js";
+
 import {
   INIT_GAME,
-  WAITING_FOR_OPPONENT,
   SUBMIT_ANSWER,
   LEADERBOARD,
   LEADERBOARD_UPDATE,
   PING,
   PONG,
+  EXIT_GAME,
 } from "./messages.js";
-import { QUESTIONS_PER_MATCH } from "./config.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import {
+  QUESTIONS_PER_MATCH,
+} from "./config.js";
 
-// Load questions from questions.json (checking current directory and src directory)
+const __filename =
+  fileURLToPath(import.meta.url);
+
+const __dirname =
+  path.dirname(__filename);
+
 function loadQuestionsFromJson(): QuestionItem[] {
-  const possiblePaths = [
-    path.join(__dirname, "questions.json"),
-    path.join(__dirname, "../src/questions.json"),
-    path.join(process.cwd(), "apps/Ws/src/questions.json"),
-    path.join(process.cwd(), "src/questions.json"),
+  const paths = [
+    path.join(
+      __dirname,
+      "questions.json"
+    ),
+    path.join(
+      __dirname,
+      "../src/questions.json"
+    ),
+    path.join(
+      process.cwd(),
+      "apps/Ws/src/questions.json"
+    ),
+    path.join(
+      process.cwd(),
+      "src/questions.json"
+    ),
   ];
 
-  for (const p of possiblePaths) {
-    if (fs.existsSync(p)) {
-      try {
-        const data = fs.readFileSync(p, "utf-8");
-        return JSON.parse(data);
-      } catch (err) {
-        // continue
-      }
+  for (const p of paths) {
+    if (!fs.existsSync(p)) {
+      continue;
+    }
+
+    try {
+      return JSON.parse(
+        fs.readFileSync(
+          p,
+          "utf-8"
+        )
+      );
+    } catch (error) {
+      console.error(
+        `[WS Questions] Failed to load ${p}:`,
+        error
+      );
     }
   }
 
   return [];
 }
 
-const DEFAULT_QUESTIONS: QuestionItem[] = loadQuestionsFromJson();
+const DEFAULT_QUESTIONS =
+  loadQuestionsFromJson();
 
 export class GameManager {
-  private games: Game[];
-  private pendingUser: User | null;
-  private users: User[];
-  private inMemoryScores: Map<string, { points: number; matchesWon: number; matchesPlayed: number }>;
+  private games: Game[] = [];
+  private pendingUser: User | null = null;
+  private users: User[] = [];
 
-  constructor() {
-    this.games = [];
-    this.pendingUser = null;
-    this.users = [];
-    this.inMemoryScores = new Map();
-  }
+  private inMemoryScores = new Map<
+    string,
+    {
+      points: number;
+      matchesWon: number;
+      matchesPlayed: number;
+    }
+  >();
 
   public addUser(user: User) {
     this.users.push(user);
 
-    if (!this.inMemoryScores.has(user.id)) {
-      this.inMemoryScores.set(user.id, {
-        points: user.points || 0,
-        matchesWon: 0,
-        matchesPlayed: 0,
-      });
+    if (
+      !this.inMemoryScores.has(
+        user.id
+      )
+    ) {
+      this.inMemoryScores.set(
+        user.id,
+        {
+          points:
+            user.points || 0,
+          matchesWon: 0,
+          matchesPlayed: 0,
+        }
+      );
     }
 
     this.addHandler(user);
-    this.sendLeaderboard(user);
+
+    void this.sendLeaderboard(user);
   }
 
-  public removeUser(socket: WebSocket) {
-    const user = this.users.find((u) => u.socket === socket);
-    if (!user) return;
+  private isSocketOpen(
+    user: User | null
+  ) {
+    return (
+      !!user &&
+      user.socket.readyState ===
+        WebSocket.OPEN
+    );
+  }
 
-    this.users = this.users.filter((u) => u.socket !== socket);
+  private findActiveGame(
+    userId: string
+  ) {
+    return this.games.find(
+      (game) =>
+        game.player1.id ===
+          userId ||
+        game.player2.id ===
+          userId
+    );
+  }
 
-    if (this.pendingUser && this.pendingUser.socket === socket) {
+  private requeueIfConnected(
+    user: User
+  ) {
+    if (
+      !this.isSocketOpen(user) ||
+      this.findActiveGame(user.id)
+    ) {
+      return;
+    }
+
+    if (
+      this.pendingUser?.id ===
+      user.id
+    ) {
+      return;
+    }
+
+    if (!this.pendingUser) {
+      this.pendingUser = user;
+
+      try {
+        user.send({
+          type:
+            "waiting_for_opponent",
+          payload: {
+            message:
+              "Searching for opponent...",
+          },
+        });
+      } catch {
+        this.pendingUser = null;
+      }
+    }
+  }
+
+  public removeUser(
+    socket: WebSocket
+  ) {
+    const user =
+      this.users.find(
+        (u) => u.socket === socket
+      );
+
+    if (!user) {
+      return;
+    }
+
+    console.log(
+      `[WS] User disconnected: ${user.name} (${user.id})`
+    );
+
+    this.users =
+      this.users.filter(
+        (u) => u.socket !== socket
+      );
+
+    if (
+      this.pendingUser?.socket ===
+      socket
+    ) {
       this.pendingUser = null;
     }
 
-    const game = this.games.find(
-      (g) => g.player1.id === user.id || g.player2.id === user.id
-    );
+    const game =
+      this.findActiveGame(
+        user.id
+      );
+
     if (game) {
-      game.handleDisconnect(user);
+      void game.handleDisconnect(
+        user
+      );
     }
   }
 
-  public removeGame(gameId: string) {
-    this.games = this.games.filter((g) => g.gameId !== gameId);
+  public removeGame(
+    gameId: string
+  ) {
+    this.games =
+      this.games.filter(
+        (game) =>
+          game.gameId !== gameId
+      );
   }
 
-  private addHandler(user: User) {
-    user.socket.on("message", async (data) => {
-      try {
-        const message = JSON.parse(data.toString());
+  private addHandler(
+    user: User
+  ) {
+    user.socket.on(
+      "message",
+      async (data) => {
+        try {
+          const message =
+            JSON.parse(
+              data.toString()
+            );
 
-        // 1. Start match request from frontend
-        if (message.type === INIT_GAME) {
-          const existingGame = this.games.find(
-            (g) => g.player1.id === user.id || g.player2.id === user.id
+          const type =
+            String(
+              message?.type ?? ""
+            ).trim();
+
+          const isInitGame =
+            type === INIT_GAME ||
+            type === "init_game";
+
+          const isBotGame =
+            type === "init_bot_game";
+
+          const isSubmitAnswer =
+            type ===
+              SUBMIT_ANSWER ||
+            type ===
+              "submit_answer";
+
+          const isExitGame =
+            type === EXIT_GAME ||
+            type === "exit_game";
+
+          const isLeaderboard =
+            type === LEADERBOARD ||
+            type ===
+              "leaderboard";
+
+          const isPing =
+            type === PING ||
+            type === "ping";
+
+          console.log(
+            `[WS] ${user.name} -> ${type}`
           );
-          if (existingGame) {
-            user.send({
-              type: "already_in_game",
-              payload: { gameId: existingGame.gameId },
-            });
-            return;
-          }
 
-          if (this.pendingUser) {
-            if (this.pendingUser.id === user.id) {
-              user.send({
-                type: WAITING_FOR_OPPONENT,
-                payload: { message: "Already in queue waiting for an opponent" },
-              });
+          // -------------------------
+          // Human matchmaking
+          // -------------------------
+
+          if (isInitGame) {
+            if (
+              this.findActiveGame(
+                user.id
+              )
+            ) {
               return;
             }
 
-            const opponent = this.pendingUser;
+            if (
+              this.pendingUser &&
+              !this.isSocketOpen(
+                this.pendingUser
+              )
+            ) {
+              this.pendingUser = null;
+            }
+
+            if (
+              this.pendingUser?.id ===
+              user.id
+            ) {
+              user.send({
+                type:
+                  "waiting_for_opponent",
+                payload: {
+                  message:
+                    "Already waiting for opponent...",
+                },
+              });
+
+              return;
+            }
+
+            if (!this.pendingUser) {
+              this.pendingUser = user;
+
+              user.send({
+                type:
+                  "waiting_for_opponent",
+                payload: {
+                  message:
+                    "Searching for opponent...",
+                },
+              });
+
+              return;
+            }
+
+            const opponent =
+              this.pendingUser;
+
             this.pendingUser = null;
 
-            // Pick random questions from questions.json / DB
-            const questions = await this.getQuestions(QUESTIONS_PER_MATCH);
+            if (
+              !this.isSocketOpen(
+                opponent
+              ) ||
+              !this.isSocketOpen(user)
+            ) {
+              this.requeueIfConnected(
+                opponent
+              );
 
-            const game = new Game(opponent, user, questions, (gameId) => {
-              this.updateScoresAfterGame(game);
-              this.removeGame(gameId);
-              this.broadcastLeaderboard();
-            });
+              this.requeueIfConnected(
+                user
+              );
+
+              return;
+            }
+
+            const questions =
+              await this.getQuestions(
+                QUESTIONS_PER_MATCH
+              );
+
+            if (
+              !this.isSocketOpen(
+                opponent
+              ) ||
+              !this.isSocketOpen(user)
+            ) {
+              this.requeueIfConnected(
+                opponent
+              );
+
+              this.requeueIfConnected(
+                user
+              );
+
+              return;
+            }
+
+            let game!: Game;
+
+            game = new Game(
+              opponent,
+              user,
+              questions,
+              (
+                gameId,
+                shouldUpdateScores
+              ) => {
+                if (
+                  shouldUpdateScores
+                ) {
+                  this.updateScoresAfterGame(
+                    game
+                  );
+                }
+
+                this.removeGame(
+                  gameId
+                );
+
+                void this.broadcastLeaderboard();
+              }
+            );
 
             this.games.push(game);
-          } else {
-            this.pendingUser = user;
-            user.send({
-              type: WAITING_FOR_OPPONENT,
-              payload: { message: "Waiting for an opponent to join..." },
-            });
-          }
-        }
 
-        // 2. Submit MCQ answer
-        if (message.type === SUBMIT_ANSWER && message.payload) {
-          const game = this.games.find(
-            (g) => g.player1.id === user.id || g.player2.id === user.id
-          );
-          if (game) {
+            if (!game.start()) {
+              this.removeGame(
+                game.gameId
+              );
+
+              return;
+            }
+
+            return;
+          }
+
+          // -------------------------
+          // Bot game
+          // -------------------------
+
+          if (isBotGame) {
+            if (
+              this.findActiveGame(
+                user.id
+              )
+            ) {
+              return;
+            }
+
+            if (
+              this.pendingUser?.id ===
+              user.id
+            ) {
+              this.pendingUser = null;
+            }
+
+            const botSocket =
+              {
+                send: () => {},
+                on: () => {},
+                readyState: 1,
+              } as unknown as WebSocket;
+
+            const bot =
+              new User(
+                "bot_ai_agent",
+                "NEET AI Bot",
+                botSocket
+              );
+
+            const questions =
+              await this.getQuestions(
+                QUESTIONS_PER_MATCH
+              );
+
+            if (
+              !this.isSocketOpen(user)
+            ) {
+              return;
+            }
+
+            let game!: Game;
+
+            game = new Game(
+              user,
+              bot,
+              questions,
+              (
+                gameId,
+                shouldUpdateScores
+              ) => {
+                if (
+                  shouldUpdateScores
+                ) {
+                  this.updateScoresAfterGame(
+                    game
+                  );
+                }
+
+                this.removeGame(
+                  gameId
+                );
+
+                void this.broadcastLeaderboard();
+              }
+            );
+
+            this.games.push(game);
+
+            if (!game.start()) {
+              this.removeGame(
+                game.gameId
+              );
+
+              return;
+            }
+
+            const botInterval =
+              setInterval(() => {
+                if (
+                  !this.games.includes(
+                    game
+                  )
+                ) {
+                  clearInterval(
+                    botInterval
+                  );
+
+                  return;
+                }
+
+                const question =
+                  game.questions[
+                    game.currentQuestionIndex
+                  ];
+
+                if (!question) {
+                  return;
+                }
+
+                const answer =
+                  Math.floor(
+                    Math.random() * 4
+                  );
+
+                game.submitAnswer(
+                  bot,
+                  question.id,
+                  answer
+                );
+              }, 4000);
+
+            return;
+          }
+
+          // -------------------------
+          // Answer
+          // -------------------------
+
+          if (
+            isSubmitAnswer &&
+            message.payload
+          ) {
+            const game =
+              this.findActiveGame(
+                user.id
+              );
+
+            if (!game) {
+              return;
+            }
+
             game.submitAnswer(
               user,
-              message.payload.questionId,
-              message.payload.selectedOption
+              message.payload
+                .questionId,
+              message.payload
+                .selectedOption
             );
+
+            return;
           }
-        }
 
-        // 3. Request Leaderboard
-        if (message.type === LEADERBOARD) {
-          await this.sendLeaderboard(user);
-        }
+          // -------------------------
+          // Exit
+          // -------------------------
 
-        // 4. Ping/Pong Heartbeat
-        if (message.type === PING) {
-          user.send({ type: PONG, timestamp: Date.now() });
+          if (isExitGame) {
+            const game =
+              this.findActiveGame(
+                user.id
+              );
+
+            if (!game) {
+              return;
+            }
+
+            await game.handleExit(
+              user
+            );
+
+            return;
+          }
+
+          // -------------------------
+          // Leaderboard
+          // -------------------------
+
+          if (isLeaderboard) {
+            await this.sendLeaderboard(
+              user
+            );
+
+            return;
+          }
+
+          // -------------------------
+          // Ping
+          // -------------------------
+
+          if (isPing) {
+            user.send({
+              type: PONG,
+              timestamp: Date.now(),
+            });
+          }
+        } catch (error) {
+          console.error(
+            "[WS] Message handling error:",
+            error
+          );
         }
-      } catch (e) {
-        console.error("Error handling WS message:", e);
       }
-    });
+    );
   }
 
-  private updateScoresAfterGame(game: Game) {
-    const s1 = this.inMemoryScores.get(game.player1.id);
-    if (s1) {
-      s1.points += Math.max(0, game.player1Score);
-      s1.matchesPlayed += 1;
-      if (game.player1Score > game.player2Score) s1.matchesWon += 1;
+  private updateScoresAfterGame(
+    game: Game
+  ) {
+    const p1 =
+      this.inMemoryScores.get(
+        game.player1.id
+      );
+
+    if (p1) {
+      p1.points += Math.max(
+        0,
+        game.player1Score
+      );
+
+      p1.matchesPlayed++;
+
+      if (
+        game.player1Score >
+        game.player2Score
+      ) {
+        p1.matchesWon++;
+      }
     }
 
-    const s2 = this.inMemoryScores.get(game.player2.id);
-    if (s2) {
-      s2.points += Math.max(0, game.player2Score);
-      s2.matchesPlayed += 1;
-      if (game.player2Score > game.player1Score) s2.matchesWon += 1;
+    const p2 =
+      this.inMemoryScores.get(
+        game.player2.id
+      );
+
+    if (p2) {
+      p2.points += Math.max(
+        0,
+        game.player2Score
+      );
+
+      p2.matchesPlayed++;
+
+      if (
+        game.player2Score >
+        game.player1Score
+      ) {
+        p2.matchesWon++;
+      }
     }
   }
 
-  public async getQuestions(count: number = 5): Promise<QuestionItem[]> {
+  private answerLetterToIndex(
+    answer: string
+  ): number {
+    switch (
+      String(answer)
+        .trim()
+        .toUpperCase()
+    ) {
+      case "A":
+        return 0;
+
+      case "B":
+        return 1;
+
+      case "C":
+        return 2;
+
+      case "D":
+        return 3;
+
+      default:
+        throw new Error(
+          `[WS Questions] Invalid correct_answer: ${answer}`
+        );
+    }
+  }
+
+  public async getQuestions(
+    count: number = 5
+  ): Promise<QuestionItem[]> {
     try {
-      const dbQuestions = await prisma.question.findMany({ take: 50 });
-      if (dbQuestions && dbQuestions.length > 0) {
-        const shuffled = [...dbQuestions].sort(() => 0.5 - Math.random());
-        return shuffled.slice(0, count).map((q) => ({
-          id: q.id,
-          questionText: q.questionText,
-          options: Array.isArray(q.options)
-            ? (q.options as string[])
-            : typeof q.options === "string"
-            ? JSON.parse(q.options)
-            : ["A", "B", "C", "D"],
-          correctAnswer: q.correctAnswer,
-          subject: q.subject,
-          topic: q.topic,
-          difficulty: q.difficulty,
-          explanation: q.explanation,
-        }));
+      const aiQuestions =
+        await fetchQuestionsFromAI(
+          count
+        );
+
+      if (
+        aiQuestions.length > 0
+      ) {
+        return aiQuestions.map(
+          (q) => ({
+            id: String(q.id),
+
+            questionText:
+              q.questionText,
+
+            options:
+              q.options,
+
+            correctAnswer:
+              this.answerLetterToIndex(
+                q.correctAnswer
+              ),
+
+            subject:
+              q.subject,
+
+            topic:
+              q.topic ||
+              "General",
+
+            difficulty:
+              q.difficulty ||
+              "MEDIUM",
+
+            explanation:
+              q.explanation ||
+              null,
+          })
+        );
       }
-    } catch {
-      // Offline fallback: load from questions.json
+    } catch (error) {
+      console.warn(
+        "[WS Questions] AI loading failed."
+      );
     }
 
-    const pool = DEFAULT_QUESTIONS.length > 0 ? DEFAULT_QUESTIONS : this.getFallbackHardcoded();
-    const shuffled = [...pool].sort(() => 0.5 - Math.random());
-    return shuffled.slice(0, count);
+    // Database fallback
+    try {
+      const dbQuestions =
+        await prisma.question.findMany({
+          take: 50,
+        });
+
+      if (
+        dbQuestions.length > 0
+      ) {
+        return [
+          ...dbQuestions,
+        ]
+          .sort(
+            () =>
+              0.5 -
+              Math.random()
+          )
+          .slice(0, count)
+          .map((q) => ({
+            id: String(q.id),
+
+            questionText:
+              q.questionText,
+
+            options:
+              Array.isArray(q.options)
+                ? (q.options as string[])
+                : typeof q.options ===
+                    "string"
+                  ? JSON.parse(
+                      q.options
+                    )
+                  : [
+                      "A",
+                      "B",
+                      "C",
+                      "D",
+                    ],
+
+            correctAnswer:
+              q.correctAnswer,
+
+            subject:
+              q.subject,
+
+            topic:
+              q.topic,
+
+            difficulty:
+              q.difficulty,
+
+            explanation:
+              q.explanation,
+          }));
+      }
+    } catch (error) {
+      console.warn(
+        "[WS Questions] DB loading failed."
+      );
+    }
+
+    // Local fallback
+    const pool =
+      DEFAULT_QUESTIONS.length > 0
+        ? DEFAULT_QUESTIONS
+        : this.getFallbackHardcoded();
+
+    return [
+      ...pool,
+    ]
+      .sort(
+        () =>
+          0.5 -
+          Math.random()
+      )
+      .slice(0, count);
   }
 
   private getFallbackHardcoded(): QuestionItem[] {
     return [
       {
         id: "q1",
-        questionText: "Which organelle is known as the 'Powerhouse of the Cell'?",
-        options: ["Ribosome", "Mitochondria", "Endoplasmic Reticulum", "Golgi"],
+
+        questionText:
+          "Which organelle is known as the 'Powerhouse of the Cell'?",
+
+        options: [
+          "Ribosome",
+          "Mitochondria",
+          "Endoplasmic Reticulum",
+          "Golgi",
+        ],
+
         correctAnswer: 1,
+
         subject: "Biology",
+
         difficulty: "EASY",
-        explanation: "Mitochondria produce ATP.",
+
+        explanation:
+          "Mitochondria produce ATP.",
       },
     ];
   }
 
-  public async sendLeaderboard(user: User) {
-    const leaderboard = await this.getLeaderboardData();
-    user.send({
-      type: LEADERBOARD_UPDATE,
-      payload: { leaderboard },
-    });
+  public async sendLeaderboard(
+    user: User
+  ) {
+    const leaderboard =
+      await this.getLeaderboardData();
+
+    try {
+      user.send({
+        type:
+          LEADERBOARD_UPDATE,
+
+        payload: {
+          leaderboard,
+        },
+      });
+    } catch (error) {
+      console.error(
+        "[WS Leaderboard] Send failed:",
+        error
+      );
+    }
   }
 
   public async broadcastLeaderboard() {
-    const leaderboard = await this.getLeaderboardData();
+    const leaderboard =
+      await this.getLeaderboardData();
+
     const payload = {
-      type: LEADERBOARD_UPDATE,
-      payload: { leaderboard },
+      type:
+        LEADERBOARD_UPDATE,
+
+      payload: {
+        leaderboard,
+      },
     };
-    this.users.forEach((u) => u.send(payload));
+
+    for (const user of this.users) {
+      if (
+        user.socket.readyState ===
+        WebSocket.OPEN
+      ) {
+        try {
+          user.send(payload);
+        } catch {
+          // socket closed
+        }
+      }
+    }
   }
 
   private async getLeaderboardData() {
     try {
-      const topUsers = await prisma.user.findMany({
-        take: 20,
-        orderBy: [{ points: "desc" }, { matchesWon: "desc" }],
-        select: {
-          id: true,
-          username: true,
-          name: true,
-          avatar: true,
-          points: true,
-          matchesWon: true,
-          matchesPlayed: true,
-        },
-      });
+      const users =
+        await prisma.user.findMany({
+          take: 20,
 
-      if (topUsers && topUsers.length > 0) {
-        return topUsers.map((u, i) => ({ rank: i + 1, ...u }));
+          orderBy: [
+            {
+              points: "desc",
+            },
+            {
+              matchesWon: "desc",
+            },
+          ],
+
+          select: {
+            id: true,
+            username: true,
+            name: true,
+            avatar: true,
+            points: true,
+            matchesWon: true,
+            matchesPlayed: true,
+          },
+        });
+
+      if (users.length > 0) {
+        return users.map(
+          (user, index) => ({
+            rank: index + 1,
+            ...user,
+          })
+        );
       }
     } catch {
-      // In-memory fallback
+      // use memory fallback
     }
 
-    const list = this.users.map((u) => {
-      const stats = this.inMemoryScores.get(u.id) || { points: u.points, matchesWon: 0, matchesPlayed: 0 };
-      return {
-        id: u.id,
-        username: u.username,
-        name: u.name,
-        avatar: u.avatar || null,
-        points: stats.points,
-        matchesWon: stats.matchesWon,
-        matchesPlayed: stats.matchesPlayed,
-      };
-    });
+    const list =
+      this.users.map((user) => {
+        const stats =
+          this.inMemoryScores.get(
+            user.id
+          ) || {
+            points:
+              user.points || 0,
+            matchesWon: 0,
+            matchesPlayed: 0,
+          };
 
-    list.sort((a, b) => b.points - a.points);
-    return list.map((u, i) => ({ rank: i + 1, ...u }));
+        return {
+          id: user.id,
+          username:
+            user.username,
+          name: user.name,
+          avatar:
+            user.avatar || null,
+          points:
+            stats.points,
+          matchesWon:
+            stats.matchesWon,
+          matchesPlayed:
+            stats.matchesPlayed,
+        };
+      });
+
+    list.sort(
+      (a, b) =>
+        b.points - a.points
+    );
+
+    return list.map(
+      (user, index) => ({
+        rank: index + 1,
+        ...user,
+      })
+    );
   }
 }
