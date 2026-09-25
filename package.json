@@ -8,7 +8,9 @@
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "check-types": "turbo run check-types",
-    "test:verify": "tsx scripts/verify_system.ts"
+    "test:verify": "tsx scripts/verify_system.ts",
+     "build:ws": "pnpm --filter @repo/db db:generate && pnpm --filter @repo/db build && pnpm --filter Ws build",
+    "build:http": "pnpm --filter @repo/db db:generate && pnpm --filter @repo/db build && pnpm --filter http build"
   },
   "devDependencies": {
     "jsonwebtoken": "^9.0.2",
