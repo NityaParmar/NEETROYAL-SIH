@@ -427,11 +427,14 @@ export class GameManager {
               } as unknown as WebSocket;
 
             const bot =
-              new User(
-                "bot_ai_agent",
-                "NEET AI Bot",
-                botSocket
-              );
+              new User(botSocket, {
+                id: "bot_ai_agent",
+                username: "bot_ai_agent",
+                email: "bot_ai_agent@neetroyal.local",
+                name: "NEET AI Bot",
+                points: 0,
+                avatar: null,
+              });
 
             const questions =
               await this.getQuestions(
