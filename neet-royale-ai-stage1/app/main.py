@@ -8,7 +8,7 @@ Start the server:
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.answers import router as answers_router
@@ -45,7 +45,7 @@ app.add_middleware(
 )
 
 # ---------------------------------------------------------------------------
-# Routers
+# Routers (Handles /match, /answers, and /performance clean endpoints)
 # ---------------------------------------------------------------------------
 
 app.include_router(match_router)
@@ -54,35 +54,7 @@ app.include_router(performance_router)
 
 
 # ---------------------------------------------------------------------------
-# Direct Compatibility Endpoints (Resolves 404 & 422 from Express Node)
-# ---------------------------------------------------------------------------
-
-@app.get("/match/questions/internal")
-async def match_questions_internal_handler(count: int = 5, subject: str = None):
-    """Fallback route for Express backend question fetching."""
-    from app.db.question_registry import get_random_questions
-    questions = get_random_questions(count=count, subject=subject)
-    return {"status": "ok", "count": len(questions), "questions": questions}
-
-
-@app.post("/performance/end/{session_id}")
-async def performance_end_handler(session_id: str):
-    """Fallback route to mark match sessions ended without 404."""
-    return {"status": "ok", "session_id": session_id, "message": "Session marked ended"}
-
-
-@app.post("/answers/submit")
-async def answers_submit_handler(request: Request):
-    """Catch-all submit handler to prevent 422 schema errors."""
-    try:
-        body = await request.json()
-        return {"status": "success", "data": body}
-    except Exception:
-        return {"status": "success"}
-
-
-# ---------------------------------------------------------------------------
-# Root & Health Check Routes (Fixes Render 404 Health Checks)
+# Root & Health Check Routes
 # ---------------------------------------------------------------------------
 
 @app.get("/")

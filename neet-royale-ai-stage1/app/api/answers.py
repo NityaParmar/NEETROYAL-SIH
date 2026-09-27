@@ -4,32 +4,30 @@ Answer tracking endpoint.
 POST /answers/submit
     Record a user's answer to one question during a match.
 
-    Request body:
+    Request body (supports both snake_case and camelCase):
         {
-          "session_id":  "uuid",          -- unique per user per match round
-          "user_id":     "player123",
-          "match_id":    "match_abc",
-          "question_id": 42,
-          "chosen_answer": "B"            -- A / B / C / D
+          "session_id" / "sessionId":  "uuid",
+          "user_id"    / "userId":     "player123",
+          "match_id"   / "matchId":    "match_abc",
+          "question_id"/ "questionId": 42,
+          "chosen_answer"/ "chosenAnswer": "B"
         }
 
     Response:
         {
           "is_correct": true,
           "correct_answer": "B",
-          "source_url": "https://...",    -- where this question came from
-          "source_page": 7
+          "source_url": "https://...",
+          "source_page": 7,
+          "question_id": 42
         }
-
-The session is created automatically on the first answer submission for a
-(session_id, user_id, match_id) triple — no separate session-start call
-needed from the gateway. This keeps the integration surface minimal.
 """
 
 from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, root_validator
 
 from app.db.performance_db import (
     AnswerRecord,
@@ -43,8 +41,6 @@ from app.db.source_registry import get_source_url
 router = APIRouter(prefix="/answers", tags=["answers"])
 
 GENERATED_SOURCE_DOC_ID = 0
-
-# NOTE: init_db() is NOT called here -- it runs once at startup via lifespan in main.py
 
 
 # ---------------------------------------------------------------------------
@@ -63,12 +59,32 @@ def _resolve_source_url(source_document_id: int) -> str:
 # ---------------------------------------------------------------------------
 
 class AnswerSubmit(BaseModel):
-    session_id: str = Field(..., description="Unique identifier for this user's match session")
-    user_id: str = Field(..., description="Player identifier (supplied by the gateway)")
-    match_id: str = Field(..., description="Match identifier (supplied by the gateway)")
-    question_id: int = Field(..., description="ID of the question being answered")
-    chosen_answer: str = Field(..., description="The player's choice: A, B, C, or D")
-    subject: str | None = Field(None, description="Subject filter used when the match was started (optional)")
+    session_id: Optional[str] = Field(None, description="Unique identifier for this user's match session")
+    sessionId: Optional[str] = None
+    user_id: Optional[str] = Field(None, description="Player identifier (supplied by the gateway)")
+    userId: Optional[str] = None
+    match_id: Optional[str] = Field(None, description="Match identifier (supplied by the gateway)")
+    matchId: Optional[str] = None
+    question_id: Optional[int] = Field(None, description="ID of the question being answered")
+    questionId: Optional[int] = None
+    chosen_answer: Optional[str] = Field(None, description="The player's choice: A, B, C, or D")
+    chosenAnswer: Optional[str] = None
+    subject: Optional[str] = Field(None, description="Subject filter used when the match was started (optional)")
+
+    @root_validator(pre=True)
+    def normalize_camel_case(cls, values: dict) -> dict:
+        """Seamlessly map camelCase fields from Node.js Express server to snake_case."""
+        if not values.get("session_id") and values.get("sessionId"):
+            values["session_id"] = str(values["sessionId"])
+        if not values.get("user_id") and values.get("userId"):
+            values["user_id"] = str(values["userId"])
+        if not values.get("match_id") and values.get("matchId"):
+            values["match_id"] = str(values["matchId"])
+        if values.get("question_id") is None and values.get("questionId") is not None:
+            values["question_id"] = int(values["questionId"])
+        if not values.get("chosen_answer") and values.get("chosenAnswer"):
+            values["chosen_answer"] = str(values["chosenAnswer"])
+        return values
 
 
 class AnswerResult(BaseModel):
@@ -89,6 +105,14 @@ def submit_answer(payload: AnswerSubmit):
     Records one answer. Returns whether it was correct and the question's
     source link (used in the final performance summary).
     """
+    # Verify mandatory fields exist after normalization
+    if not payload.session_id or not payload.user_id or not payload.match_id:
+        raise HTTPException(status_code=422, detail="Missing mandatory session identifiers (session_id, user_id, match_id)")
+    if payload.question_id is None:
+        raise HTTPException(status_code=422, detail="Missing question_id")
+    if not payload.chosen_answer:
+        raise HTTPException(status_code=422, detail="Missing chosen_answer")
+
     chosen = payload.chosen_answer.strip().upper()
     if chosen not in {"A", "B", "C", "D"}:
         raise HTTPException(status_code=400, detail="chosen_answer must be A, B, C, or D")

@@ -7,37 +7,6 @@ GET /performance/summary/{session_id}
 
 POST /performance/end/{session_id}
     Marks a session as completed (sets ended_at).
-
-Response shape for GET /performance/summary:
-    {
-      "session_id": "...",
-      "user_id": "...",
-      "match_id": "...",
-      "started_at": "2024-...",
-      "ended_at": "2024-..." | null,
-      "status": "active" | "completed",
-      "total_questions": 10,
-      "correct": 7,
-      "incorrect": 3,
-      "score_percent": 70.0,
-      "ai_analysis": {
-        "overall_feedback": "Good effort! You scored 70%...",
-        "strong_topics": ["Thermodynamics", "Genetics"],
-        "weak_topics": ["Optics", "Organic Chemistry"],
-        "subject_breakdown": {
-          "physics":   {"correct": 2, "total": 4},
-          "chemistry": {"correct": 3, "total": 3},
-          "biology":   {"correct": 2, "total": 3}
-        },
-        "recommendations": [
-          "Revise Optics — focus on refraction and lens formula",
-          "Practice Organic Chemistry reaction mechanisms"
-        ],
-        "priority_topic": "Optics",
-        "ai_available": true
-      },
-      "answers": [ ... ]
-    }
 """
 
 import logging
@@ -46,15 +15,16 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.api.ai_analysis import generate_analysis
-from app.db.performance_db import end_session, get_answers_for_session, get_session
+from app.db.performance_db import (
+    create_session,
+    end_session,
+    get_answers_for_session,
+    get_session,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/performance", tags=["performance"])
-
-# NOTE: init_db() is NOT called here — it is called once at startup in main.py
-# via the lifespan handler. Calling it at import time caused startup crashes
-# when the data/ directory didn't exist yet.
 
 
 # ---------------------------------------------------------------------------
@@ -121,21 +91,18 @@ class PerformanceSummary(BaseModel):
 def get_summary(session_id: str):
     """
     Full per-question breakdown WITH AI coaching analysis.
-
-    The AI analysis includes:
-    - Overall feedback based on score
-    - Topics the player is strong/weak in
-    - Per-subject correct/total breakdown
-    - Specific study recommendations
-    - The single highest-priority topic to review
-
-    If the Groq API is unavailable, ai_analysis.ai_available will be false
-    and a rule-based fallback analysis is returned instead. The endpoint
-    never fails due to AI unavailability.
+    Gracefully handles sessions that were lazy-initialized.
     """
     session = get_session(session_id)
     if session is None:
-        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+        # Fallback: lazy-create session row if client requests summary directly
+        create_session(
+            session_id=session_id,
+            user_id="player_guest",
+            match_id="match_live",
+            subject=None,
+        )
+        session = get_session(session_id)
 
     answer_rows = get_answers_for_session(session_id)
 
@@ -169,7 +136,6 @@ def get_summary(session_id: str):
                 answered_at=row["answered_at"],
             )
         )
-        # Flat dict version passed to the AI analyser
         answers_for_ai.append({
             "question_text": row["question_text"],
             "subject":       row["subject"],
@@ -183,10 +149,6 @@ def get_summary(session_id: str):
     incorrect_count = total - correct_count
     score_pct = round((correct_count / total * 100), 2) if total > 0 else 0.0
 
-    # ------------------------------------------------------------------
-    # AI Analysis — called after all answers are collected
-    # Never raises; returns a fallback dict if Groq is unavailable
-    # ------------------------------------------------------------------
     logger.info("Generating AI analysis for session %s (score=%.1f%%)", session_id, score_pct)
     raw_analysis = generate_analysis(
         score_percent=score_pct,
@@ -195,7 +157,6 @@ def get_summary(session_id: str):
         answers=answers_for_ai,
     )
 
-    # Coerce subject_breakdown values into SubjectStats objects
     subject_breakdown = {
         subj: SubjectStats(
             correct=stats.get("correct", 0),
@@ -216,11 +177,11 @@ def get_summary(session_id: str):
 
     return PerformanceSummary(
         session_id=session_id,
-        user_id=session["user_id"],
-        match_id=session["match_id"],
-        started_at=session["started_at"],
-        ended_at=session["ended_at"],
-        status=session["status"],
+        user_id=session["user_id"] if session else "player_guest",
+        match_id=session["match_id"] if session else "match_live",
+        started_at=session["started_at"] if session else "",
+        ended_at=session["ended_at"] if session else None,
+        status=session["status"] if session else "completed",
         total_questions=total,
         correct=correct_count,
         incorrect=incorrect_count,
@@ -237,11 +198,16 @@ def get_summary(session_id: str):
 def end_match_session(session_id: str):
     """
     Call this when the match round ends. Sets ended_at and status=completed.
-    Idempotent -- safe to call multiple times.
+    Idempotent and safe against 404s.
     """
     session = get_session(session_id)
     if session is None:
-        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+        create_session(
+            session_id=session_id,
+            user_id="player_guest",
+            match_id="match_live",
+            subject=None,
+        )
 
     end_session(session_id)
     return {"session_id": session_id, "status": "completed"}
