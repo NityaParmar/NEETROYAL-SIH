@@ -82,6 +82,8 @@ class AnswerSubmit(BaseModel):
             values["match_id"] = str(values["matchId"])
         if values.get("question_id") is None and values.get("questionId") is not None:
             values["question_id"] = int(values["questionId"])
+        elif values.get("question_id") is not None:
+            values["question_id"] = int(values["question_id"])
         if not values.get("chosen_answer") and values.get("chosenAnswer"):
             values["chosen_answer"] = str(values["chosenAnswer"])
         return values
@@ -117,15 +119,17 @@ def submit_answer(payload: AnswerSubmit):
     if chosen not in {"A", "B", "C", "D"}:
         raise HTTPException(status_code=400, detail="chosen_answer must be A, B, C, or D")
 
-    question = get_question_by_id(payload.question_id)
+    # Explicit integer cast guarantees strict SQLite query execution
+    q_id = int(payload.question_id)
+    question = get_question_by_id(q_id)
     if question is None:
-        raise HTTPException(status_code=404, detail=f"Question id={payload.question_id} not found")
+        raise HTTPException(status_code=404, detail=f"Question id={q_id} not found")
 
     # Prevent double-submission for the same question in the same session
-    if has_answer_for_question(payload.session_id, payload.question_id):
+    if has_answer_for_question(payload.session_id, q_id):
         raise HTTPException(
             status_code=409,
-            detail=f"Answer already recorded for question {payload.question_id} in session {payload.session_id}",
+            detail=f"Answer already recorded for question {q_id} in session {payload.session_id}",
         )
 
     # Auto-create the session on first answer (lazy init)
@@ -142,7 +146,7 @@ def submit_answer(payload: AnswerSubmit):
     record_answer(
         AnswerRecord(
             session_id=payload.session_id,
-            question_id=payload.question_id,
+            question_id=q_id,
             question_text=question["question_text"],
             option_a=question["option_a"],
             option_b=question["option_b"],
@@ -164,5 +168,5 @@ def submit_answer(payload: AnswerSubmit):
         correct_answer=question["correct_answer"],
         source_url=source_url,
         source_page=question["page_number"] if question["page_number"] != 0 else None,
-        question_id=payload.question_id,
+        question_id=q_id,
     )
