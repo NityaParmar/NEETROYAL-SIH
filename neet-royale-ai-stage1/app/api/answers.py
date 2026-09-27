@@ -73,19 +73,42 @@ class AnswerSubmit(BaseModel):
 
     @root_validator(pre=True)
     def normalize_camel_case(cls, values: dict) -> dict:
-        """Seamlessly map camelCase fields from Node.js Express server to snake_case."""
+        """Seamlessly map camelCase fields and handle string-to-int coercion without 422 errors."""
+        # Normalize session_id
         if not values.get("session_id") and values.get("sessionId"):
             values["session_id"] = str(values["sessionId"])
-        if not values.get("user_id") and values.get("userId"):
-            values["user_id"] = str(values["userId"])
-        if not values.get("match_id") and values.get("matchId"):
-            values["match_id"] = str(values["matchId"])
-        if values.get("question_id") is None and values.get("questionId") is not None:
-            values["question_id"] = int(values["questionId"])
-        elif values.get("question_id") is not None:
-            values["question_id"] = int(values["question_id"])
-        if not values.get("chosen_answer") and values.get("chosenAnswer"):
-            values["chosen_answer"] = str(values["chosenAnswer"])
+        
+        # Normalize user_id
+        if not values.get("user_id"):
+            if values.get("userId"):
+                values["user_id"] = str(values["userId"])
+            elif values.get("playerId"):
+                values["user_id"] = str(values["playerId"])
+
+        # Normalize match_id
+        if not values.get("match_id"):
+            if values.get("matchId"):
+                values["match_id"] = str(values["matchId"])
+            elif values.get("gameId"):
+                values["match_id"] = str(values["gameId"])
+
+        # Coerce question_id safely from any format (str, int, questionId)
+        raw_q_id = values.get("question_id") if values.get("question_id") is not None else values.get("questionId")
+        if raw_q_id is not None:
+            try:
+                values["question_id"] = int(raw_q_id)
+            except (ValueError, TypeError):
+                pass
+
+        # Normalize chosen_answer
+        if not values.get("chosen_answer"):
+            if values.get("chosenAnswer"):
+                values["chosen_answer"] = str(values["chosenAnswer"])
+            elif values.get("selectedOption"):
+                values["chosen_answer"] = str(values["selectedOption"])
+            elif values.get("answer"):
+                values["chosen_answer"] = str(values["answer"])
+
         return values
 
 
@@ -127,9 +150,14 @@ def submit_answer(payload: AnswerSubmit):
 
     # Prevent double-submission for the same question in the same session
     if has_answer_for_question(payload.session_id, q_id):
-        raise HTTPException(
-            status_code=409,
-            detail=f"Answer already recorded for question {q_id} in session {payload.session_id}",
+        # Return graceful status instead of failing entire game loop
+        is_correct = chosen == question["correct_answer"]
+        return AnswerResult(
+            is_correct=is_correct,
+            correct_answer=question["correct_answer"],
+            source_url=_resolve_source_url(question["source_document_id"]),
+            source_page=question["page_number"] if question["page_number"] != 0 else None,
+            question_id=q_id,
         )
 
     # Auto-create the session on first answer (lazy init)
