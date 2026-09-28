@@ -1,13 +1,30 @@
+import http from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { WS_PORT } from "./config.js";
 import { GameManager } from "./GameManager.js";
 import { extractAuthUser } from "./auth.js";
 import { User } from "./User.js";
 
-const wss = new WebSocketServer({ port: WS_PORT });
+// 1. Create a lightweight HTTP server for Health Checks
+const server = http.createServer((req, res) => {
+  if (req.url === "/health" || req.url === "/") {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("OK");
+  } else {
+    res.writeHead(404, { "Content-Type": "text/plain" });
+    res.end("Not Found");
+  }
+});
+
+// 2. Attach WebSocketServer to the HTTP server
+const wss = new WebSocketServer({ server });
 const gameManager = new GameManager();
 
-console.log(`⚡ WebSocket 1v1 MCQ Battle Backend running on ws://localhost:${WS_PORT}`);
+// 3. Start listening on the port
+server.listen(WS_PORT, () => {
+  console.log(`⚡ WebSocket 1v1 MCQ Battle Backend running on port ${WS_PORT}`);
+  console.log(`🏥 Health check available at http://localhost:${WS_PORT}/health`);
+});
 
 wss.on("connection", function connection(
   ws: WebSocket & { isEvicted?: boolean },
