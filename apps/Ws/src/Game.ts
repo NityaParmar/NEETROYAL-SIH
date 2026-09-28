@@ -401,6 +401,12 @@ export class Game {
         user.id
       );
 
+    // Safely coerce string UUIDs or text IDs into valid integer IDs for SQLite
+    const parsedQId = parseInt(question.id, 10);
+    const numericQuestionId = isNaN(parsedQId) 
+      ? Math.abs(question.id.split('').reduce((acc, char) => (acc << 5) - acc + char.charCodeAt(0), 0))
+      : parsedQId;
+
     try {
       await axios.post(
         `${this.aiServiceUrl}/answers/submit`,
@@ -408,7 +414,7 @@ export class Game {
           session_id: sessionId,
           user_id: user.id,
           match_id: this.gameId,
-          question_id: Number(question.id),
+          question_id: numericQuestionId,
           chosen_answer: chosenAnswer,
           subject: question.subject,
         },
@@ -447,70 +453,70 @@ export class Game {
     return sessionId;
   }
 
- private async finishPerformanceSessions() {
-  if (this.pendingPerformanceRequests.size) {
-    await Promise.allSettled(
-      Array.from(this.pendingPerformanceRequests)
-    );
-  }
-
-  const reports = new Map<string, unknown>();
-
-  await Promise.allSettled(
-    Array.from(this.performanceSessions.entries()).map(
-      async ([userId, sessionId]) => {
-        try {
-          // 1. Mark performance session as completed
-          await axios.post(
-            `${this.aiServiceUrl}/performance/end/${sessionId}`,
-            {},
-            { timeout: 5000 }
-          );
-
-          // 2. Generate/fetch final AI performance analysis
-          const response = await axios.get(
-            `${this.aiServiceUrl}/performance/summary/${sessionId}`,
-            {
-              timeout: 15000,
-            }
-          );
-
-          reports.set(
-            userId,
-            response.data
-          );
-        } catch (error) {
-          console.error(
-            `[GAME ${this.gameId}] Performance report failed for ${userId}:`,
-            error
-          );
-        }
-      }
-    )
-  );
-
-  // Send each player ONLY their own performance report.
-  for (const [userId, report] of reports.entries()) {
-    const player =
-      userId === this.player1.id
-        ? this.player1
-        : userId === this.player2.id
-          ? this.player2
-          : null;
-
-    if (!player) {
-      continue;
+  private async finishPerformanceSessions() {
+    if (this.pendingPerformanceRequests.size) {
+      await Promise.allSettled(
+        Array.from(this.pendingPerformanceRequests)
+      );
     }
 
-    this.safeSend(player, {
-      type: PERFORMANCE_REPORT,
-      payload: {
-        gameId: this.gameId,
-        report,
-      },
-    });
+    const reports = new Map<string, unknown>();
+
+    await Promise.allSettled(
+      Array.from(this.performanceSessions.entries()).map(
+        async ([userId, sessionId]) => {
+          try {
+            // 1. Mark performance session as completed
+            await axios.post(
+              `${this.aiServiceUrl}/performance/end/${sessionId}`,
+              {},
+              { timeout: 5000 }
+            );
+
+            // 2. Generate/fetch final AI performance analysis
+            const response = await axios.get(
+              `${this.aiServiceUrl}/performance/summary/${sessionId}`,
+              {
+                timeout: 15000,
+              }
+            );
+
+            reports.set(
+              userId,
+              response.data
+            );
+          } catch (error) {
+            console.error(
+              `[GAME ${this.gameId}] Performance report failed for ${userId}:`,
+              error
+            );
+          }
+        }
+      )
+    );
+
+    // Send each player ONLY their own performance report.
+    for (const [userId, report] of reports.entries()) {
+      const player =
+        userId === this.player1.id
+          ? this.player1
+          : userId === this.player2.id
+            ? this.player2
+            : null;
+
+      if (!player) {
+        continue;
+      }
+
+      this.safeSend(player, {
+        type: PERFORMANCE_REPORT,
+        payload: {
+          gameId: this.gameId,
+          report,
+        },
+      });
+    }
   }
-}
 
   private evaluateQuestion() {
     if (this.isFinished) {
