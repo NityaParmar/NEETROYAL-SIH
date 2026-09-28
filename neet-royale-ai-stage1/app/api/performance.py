@@ -2,16 +2,12 @@
 Performance summary endpoint.
 
 GET /performance/summary/{session_id}
-    Returns the full post-match breakdown for one player session PLUS
-    an AI-generated analysis (strengths, weaknesses, study recommendations).
-
 POST /performance/end/{session_id}
-    Marks a session as completed (sets ended_at).
 """
 
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel
 
 from app.api.ai_analysis import generate_analysis
@@ -27,10 +23,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/performance", tags=["performance"])
 
 
-# ---------------------------------------------------------------------------
-# Response schemas
-# ---------------------------------------------------------------------------
-
 class AnswerDetail(BaseModel):
     question_id: int
     question_text: str
@@ -45,7 +37,7 @@ class AnswerDetail(BaseModel):
     topic: str
     source_url: str
     source_page: int | None
-    source_type: str   # "extracted" | "generated"
+    source_type: str
     answered_at: str
 
 
@@ -79,23 +71,14 @@ class PerformanceSummary(BaseModel):
     answers: list[AnswerDetail]
 
 
-# ---------------------------------------------------------------------------
-# Endpoints
-# ---------------------------------------------------------------------------
-
 @router.get(
     "/summary/{session_id}",
     response_model=PerformanceSummary,
     summary="Get post-match performance summary with AI analysis",
 )
 def get_summary(session_id: str):
-    """
-    Full per-question breakdown WITH AI coaching analysis.
-    Gracefully handles sessions that were lazy-initialized.
-    """
     session = get_session(session_id)
     if session is None:
-        # Fallback: lazy-create session row if client requests summary directly
         create_session(
             session_id=session_id,
             user_id="player_guest",
@@ -196,10 +179,6 @@ def get_summary(session_id: str):
     summary="Mark a match session as completed",
 )
 def end_match_session(session_id: str):
-    """
-    Call this when the match round ends. Sets ended_at and status=completed.
-    Idempotent and safe against 404s.
-    """
     session = get_session(session_id)
     if session is None:
         create_session(

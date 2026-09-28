@@ -1,14 +1,5 @@
 """
 AI-powered performance analysis module.
-
-Called by the /performance/summary endpoint after a match ends.
-Uses Groq/Qwen to generate a personalised analysis of the player's
-performance — strengths, weaknesses, and specific study recommendations
-based on the actual questions they got wrong.
-
-Returns a structured AIAnalysis object. If the LLM call fails for any
-reason (API down, rate limit, bad key), it returns a graceful fallback
-so the rest of the summary still works.
 """
 
 import logging
@@ -78,15 +69,6 @@ def _build_performance_prompt(score_percent: float, correct: int, total: int,
 
 def generate_analysis(score_percent: float, correct: int, total: int,
                        answers: list[dict]) -> dict:
-    """
-    Calls Groq to generate an AI analysis of the player's round.
-
-    Returns a dict with keys: overall_feedback, strong_topics, weak_topics,
-    subject_breakdown, recommendations, priority_topic.
-
-    Never raises -- returns a fallback dict if anything goes wrong so the
-    /performance/summary endpoint always succeeds.
-    """
     import json
 
     api_key = os.getenv("GROQ_API_KEY")
@@ -96,7 +78,11 @@ def generate_analysis(score_percent: float, correct: int, total: int,
 
     try:
         from groq import Groq
-        client = Groq(api_key=api_key)
+        import httpx
+
+        # Explicit client instantiation avoids httpx/proxies version conflict
+        http_client = httpx.Client()
+        client = Groq(api_key=api_key, http_client=http_client)
 
         user_msg = _build_performance_prompt(score_percent, correct, total, answers)
 
@@ -108,14 +94,12 @@ def generate_analysis(score_percent: float, correct: int, total: int,
             ],
             temperature=0.4,
             max_completion_tokens=800,
-            reasoning_format="parsed",
         )
 
         raw = _strip_think(response.choices[0].message.content)
         raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw.strip())
         result = json.loads(raw)
 
-        # Ensure all expected keys exist (model may omit some)
         result.setdefault("overall_feedback", _default_feedback(score_percent))
         result.setdefault("strong_topics", [])
         result.setdefault("weak_topics", [])
@@ -156,7 +140,6 @@ def _default_feedback(score_percent: float) -> str:
 
 def _fallback_analysis(score_percent: float, correct: int, total: int,
                         answers: list[dict]) -> dict:
-    """Rule-based fallback used when the LLM is unavailable."""
     wrong_topics = list({a["topic"] for a in answers if not a["is_correct"]})
     right_topics  = list({a["topic"] for a in answers if a["is_correct"]})
 

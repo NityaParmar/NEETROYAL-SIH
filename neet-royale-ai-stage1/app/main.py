@@ -45,7 +45,7 @@ app.add_middleware(
 )
 
 # ---------------------------------------------------------------------------
-# Routers (Handles /match, /answers, and /performance clean endpoints)
+# Routers
 # ---------------------------------------------------------------------------
 
 app.include_router(match_router)
