@@ -8,20 +8,31 @@ import { User } from "./User.js";
 // 1. Create a lightweight HTTP server for Health Checks
 const server = http.createServer((req, res) => {
   if (req.url === "/health" || req.url === "/") {
-    res.writeHead(200, { "Content-Type": "text/plain" });
+    // Flush immediately with Connection:close so cron probes get a clean 200
+    // and don't stall waiting for keep-alive reuse.
+    res.writeHead(200, {
+      "Content-Type": "text/plain",
+      "Connection": "close",
+    });
     res.end("OK");
   } else {
-    res.writeHead(404, { "Content-Type": "text/plain" });
+    res.writeHead(404, { "Content-Type": "text/plain", "Connection": "close" });
     res.end("Not Found");
   }
+});
+
+// Disable Nagle's algorithm so health-check responses are sent immediately
+// without waiting to batch TCP packets — prevents Render probe timeouts.
+server.on("connection", (socket) => {
+  socket.setNoDelay(true);
 });
 
 // 2. Attach WebSocketServer to the HTTP server
 const wss = new WebSocketServer({ server });
 const gameManager = new GameManager();
 
-// 3. Start listening on the port
-server.listen(WS_PORT, () => {
+// 3. Start listening on 0.0.0.0 (required for Render — binds all interfaces)
+server.listen(WS_PORT, "0.0.0.0", () => {
   console.log(`⚡ WebSocket 1v1 MCQ Battle Backend running on port ${WS_PORT}`);
   console.log(`🏥 Health check available at http://localhost:${WS_PORT}/health`);
 });

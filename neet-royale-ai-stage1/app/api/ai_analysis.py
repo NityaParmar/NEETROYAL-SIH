@@ -12,7 +12,7 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-GROQ_MODEL = "qwen/qwen3.8-27b"
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama3-8b-8192")
 
 ANALYSIS_SYSTEM_PROMPT = """You are an expert NEET exam coach. A student just completed a practice match round.
 You will be given their performance data: score, and each question with whether they got it right or wrong.
@@ -78,11 +78,10 @@ def generate_analysis(score_percent: float, correct: int, total: int,
 
     try:
         from groq import Groq
-        import httpx
 
-        # Explicit client instantiation avoids httpx/proxies version conflict
-        http_client = httpx.Client()
-        client = Groq(api_key=api_key, http_client=http_client)
+        # groq>=0.12: simple constructor, no http_client kwarg needed.
+        # httpx 0.28 + groq 0.13 are fully compatible out of the box.
+        client = Groq(api_key=api_key)
 
         user_msg = _build_performance_prompt(score_percent, correct, total, answers)
 

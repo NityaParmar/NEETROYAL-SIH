@@ -401,11 +401,25 @@ export class Game {
         user.id
       );
 
-    // Safely coerce string UUIDs or text IDs into valid integer IDs for SQLite
+    // Derive a stable 32-bit signed integer from the question ID string.
+    // Uses djb2-style hash clamped to safe SQLite integer range.
     const parsedQId = parseInt(question.id, 10);
-    const numericQuestionId = isNaN(parsedQId) 
-      ? Math.abs(question.id.split('').reduce((acc, char) => (acc << 5) - acc + char.charCodeAt(0), 0))
-      : parsedQId;
+    let numericQuestionId: number;
+    if (!isNaN(parsedQId)) {
+      numericQuestionId = parsedQId;
+    } else {
+      // Hash the string UUID into a 32-bit signed integer
+      let hash = 5381;
+      for (let i = 0; i < question.id.length; i++) {
+        hash = ((hash << 5) + hash) ^ question.id.charCodeAt(i);
+        hash = hash | 0; // force 32-bit signed
+      }
+      numericQuestionId = Math.abs(hash) % 2_000_000_000; // stay in safe SQLite range
+    }
+
+    // Map correctAnswer index (0-3) back to letter for the AI service
+    const letters = ["A", "B", "C", "D"];
+    const correctLetter = letters[question.correctAnswer] ?? "A";
 
     try {
       await axios.post(
@@ -417,6 +431,19 @@ export class Game {
           question_id: numericQuestionId,
           chosen_answer: chosenAnswer,
           subject: question.subject,
+          // Include full question data so the AI service can store answers
+          // for questions that were generated/loaded locally and don't exist
+          // in registry.db — prevents the 404 that caused 0/0 results.
+          generated_question: {
+            question_text: question.questionText,
+            option_a: question.options[0] ?? "",
+            option_b: question.options[1] ?? "",
+            option_c: question.options[2] ?? "",
+            option_d: question.options[3] ?? "",
+            correct_answer: correctLetter,
+            subject: question.subject,
+            topic: question.topic ?? question.subject,
+          },
         },
         {
           timeout: 5000,

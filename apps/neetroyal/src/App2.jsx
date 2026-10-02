@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import Dither from "./component/Dither";
 import Specular from "./component/Specular";
 import CurvedLoop from "./component/CurvedLoop";
@@ -422,7 +422,7 @@ export default function App() {
             >
               <section className="max-w-auto h-100 mx-auto -mt-39 -mb-10 py-0 w-full relative z-20 overflow-hidden ">
                 <CurvedLoop
-                  marqueeText="Be ✦ Competitive ✦ Hail ✦ Marry ✦ NeetRoyal ✦ "
+                  marqueeText="Be ✦ Competitive ✦ Hail ✦ Mary ✦ NeetRoyal ✦ "
                   speed={2}
                   curveAmount={250}
                   direction="right"
