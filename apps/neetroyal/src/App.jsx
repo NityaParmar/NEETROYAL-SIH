@@ -422,7 +422,7 @@ export default function App() {
               threshold={0.1}
               delay={0.6}
             >
-              <section className="max-w-auto h-100 mx-auto -mt-39 -mb-10 py-0 w-full relative z-20 overflow-hidden">
+              <div className="w-full py-12 my-auto flex items-center justify-center overflow-hidden bg-transparent z-10">
                 <CurvedLoop
                   marqueeText="Be ✦ Competitive ✦ Hail ✦ Mary ✦ NeetRoyal ✦ "
                   speed={2}
@@ -431,7 +431,7 @@ export default function App() {
                   interactive
                   className="custom-text-style text-center mx-5 text-slate-900 dark:text-emerald-400 fill-slate-900 dark:fill-slate-200 transition-colors duration-300"
                 />
-              </section>
+              </div>
             </AnimatedContent>
 
             {/* FEATURES GRID */}

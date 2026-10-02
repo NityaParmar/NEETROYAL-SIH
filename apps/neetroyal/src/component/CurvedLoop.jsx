@@ -100,7 +100,7 @@ const CurvedLoop = ({
 
   return (
     <div
-      className="w-full overflow-hidden"
+      className="w-full max-h-32 flex items-center justify-center overflow-hidden"
       style={{ visibility: ready ? 'visible' : 'hidden', cursor: cursorStyle }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -108,7 +108,7 @@ const CurvedLoop = ({
       onPointerLeave={endDrag}
     >
       <svg
-        className="select-none w-full overflow-hidden block aspect-[100/12] text-[6rem] font-bold uppercase leading-none"
+        className="select-none w-full max-h-[120px] overflow-hidden block aspect-[100/12] text-[6rem] font-bold uppercase leading-none"
         viewBox="0 0 1440 120"
       >
         <text ref={measureRef} xmlSpace="preserve" style={{ visibility: 'hidden', opacity: 0, pointerEvents: 'none' }}>
