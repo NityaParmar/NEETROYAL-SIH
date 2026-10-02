@@ -422,11 +422,11 @@ export default function App() {
               threshold={0.1}
               delay={0.6}
             >
-              <div className="w-full py-12 my-auto flex items-center justify-center overflow-hidden bg-transparent z-10">
+              <div className="w-full py-8 my-auto flex items-center justify-center overflow-hidden bg-transparent z-10">
                 <CurvedLoop
                   marqueeText="Be ✦ Competitive ✦ Hail ✦ Mary ✦ NeetRoyal ✦ "
                   speed={2}
-                  curveAmount={250}
+                  curveAmount={100}
                   direction="right"
                   interactive
                   className="custom-text-style text-center mx-5 text-slate-900 dark:text-emerald-400 fill-slate-900 dark:fill-slate-200 transition-colors duration-300"
